@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Online Quiz Game with Leaderboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
+
+    #game-box {
+      background: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .choice-btn {
+      display: block;
+      margin: 10px 0;
+      padding: 10px;
+      width: 100%;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .choice-btn:hover {
+      background-color: #0056b3;
+    }
+
+    input[type="text"] {
+      padding: 8px;
+      width: 80%;
+      margin: 10px 0;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    #leaderboard {
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    ul {
+      padding-left: 0;
+    }
+
+    li {
+      list-style: none;
+      background: #eee;
+      margin: 5px 0;
+      padding: 8px;
+      border-radius: 5px;
+    }
+
+    #shop {
+      margin-top: 20px;
+    }
+
+    .shop-btn {
+      margin: 10px 0;
+      padding: 10px;
+      border: none;
+      background-color: #28a745;
+      color: white;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .shop-btn:hover {
+      background-color: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-box">
+    <div id="start-screen">
+      <h2>Enter Your Name</h2>
+      <input type="text" id="player-name" placeholder="Your name" />
+      <button class="choice-btn" onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="quiz-screen" class="hidden">
+      <div id="question" class="question">Loading...</div>
+      <div id="choices"></div>
+      <div id="score">Score: 0 <br> Money: $0</div>
+      <button class="choice-btn" onclick="openShop()">Go to Shop</button>
+    </div>
+
+    <div id="shop" class="hidden">
+      <h3>Shop</h3>
+      <p>Spend your money on power-ups!</p>
+      <button class="shop-btn" onclick="buyDoublePoints()">Double Points - $200</button>
+      <button class="shop-btn" onclick="buyFreeze()">Freeze Other Players - $150</button>
+      <button class="shop-btn" onclick="closeShop()">Close Shop</button>
+    </div>
+
+    <div id="leaderboard" class="hidden">
+      <h3>🏆 Leaderboard</h3>
+      <ul id="leaderboard-list"></ul>
+      <button class="choice-btn" onclick="restartGame()">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Firebase Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    // 🔥 Replace this with your Firebase config
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Questions
+    const questions = [
+      {
+        question: "What is the capital of France?",
+        choices: ["London", "Paris", "Berlin", "Rome"],
+        answer: "Paris"
+      },
+      {
+        question: "Which planet is known as the Red Planet?",
+        choices: ["Earth", "Mars", "Jupiter", "Venus"],
+        answer: "Mars"
+      },
+      {
+        question: "What is 5 + 7?",
+        choices: ["10", "12", "13", "14"],
+        answer: "12"
+      }
+    ];
+
+    let currentQuestion = 0;
+    let score = 0;
+    let money = 0; // 💰 money variable
+    let playerName = "";
+    let doublePoints = false; // Double points power-up
+    let freezePlayer = false; // Freeze other player power-up
+
+    const questionEl = document.getElementById("question");
+    const choicesEl = document.getElementById("choices");
+    const scoreEl = document.getElementById("score");
+    const startScreen = document.getElementById("start-screen");
+    const quizScreen = document.getElementById("quiz-screen");
+    const leaderboardEl = document.getElementById("leaderboard");
+    const leaderboardList = document.getElementById("leaderboard-list");
+    const shopScreen = document.getElementById("shop");
+
+    function startGame() {
+      const nameInput = document.getElementById("player-name").value.trim();
+      if (nameInput === "") {
+        alert("Please enter your name to start!");
+        return;
+      }
+      playerName = nameInput;
+      startScreen.classList.add("hidden");
+      quizScreen.classList.remove("hidden");
+      currentQuestion = 0;
+      score = 0;
+      money = 0; // Reset money
+      doublePoints = false; // Reset power-ups
+      freezePlayer = false;
+      loadQuestion();
+      updateStats();
+    }
+
+    function loadQuestion() {
+      const q = questions[currentQuestion];
+      questionEl.textContent = q.question;
+      choicesEl.innerHTML = "";
+
+      q.choices.forEach(choice => {
+        const btn = document.createElement("button");
+        btn.textContent = choice;
+        btn.classList.add("choice-btn");
+        btn.onclick = () => handleAnswer(choice);
+        choicesEl.appendChild(btn);
+      });
+    }
+
+    function handleAnswer(selected) {
+      const correct = questions[currentQuestion].answer;
+      let points = doublePoints ? 2 : 1; // Double points if enabled
+
+      if (selected === correct) {
+        score += points;
+        money += 100; // Earn money
+        alert(`Correct! +$100 and ${points === 2 ? 'Double Points' : ''}`);
+      } else {
+        alert(`Wrong! The correct answer was: ${correct}`);
+      }
+
+      currentQuestion++;
+
+      if (currentQuestion < questions.length) {
+        loadQuestion();
+      } else {
+        endGame();
+      }
+
+      updateStats();
+    }
+
+    function updateStats() {
+      scoreEl.innerHTML = `Score: ${score} <br> Money: $${money}`;
+    }
+
+    function openShop() {
+      quizScreen.classList.add("hidden");
+      shopScreen.classList.remove("hidden");
+    }
+
+    function closeShop() {
+      shopScreen.classList.add("hidden");
+      quizScreen.classList.remove("hidden");
+    }
+
+    // Buy Double Points power-up
+    function buyDoublePoints() {
+      if (money >= 200) {
+        money -= 200;
+        doublePoints = true;
+        alert("You bought Double Points! Your next question will earn double points.");
+        updateStats();
+      } else {
+        alert("You don't have enough money for Double Points!");
+      }
+    }
+
+    // Buy Freeze Other Player power-up
+    function buyFreeze() {
+      if (money >= 150) {
+        money -= 150;
+        freezePlayer = true;
+        alert("You bought Freeze Other Player! You can freeze another player's ability to answer.");
+        updateStats();
+      } else {
+        alert("You don't have enough money for Freeze Other Player!");
+      }
+    }
+
+    async function endGame() {
+      quizScreen.classList.add("hidden");
+      leaderboardEl.classList.remove("hidden");
+
+      // Save to Firestore
+      await db.collection("scores").add({
+        name: playerName,
+        score: score,
+        money: money,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      showLeaderboard();
+    }
+
+    async function showLeaderboard() {
+      leaderboardList.innerHTML = "Loading...";
+
+      const snapshot = await db
+        .collection("scores")
+        .orderBy("money", "desc") // Show highest earners
+        .limit(5)
+        .get();
+
+      leaderboardList.innerHTML = "";
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const li = document.createElement("li");
+        li.textContent = `${data.name}: $${data.money}`;
+        leaderboardList.appendChild(li);
+      });
+    }
+
+    function restartGame() {
+      leaderboardEl.classList.add("hidden");
+      startScreen.classList.remove("hidden");
+    }
+  </script>
+</body>
+</html>
